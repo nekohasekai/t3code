@@ -7278,6 +7278,8 @@ export default function ChatView(props: ChatViewProps) {
     },
     /** A queued message being sent now instead of the live composer draft. */
     queuedMessage?: QueuedComposerMessage,
+    /** Set by the send-now affordance: abort the running turn. */
+    sendOptions?: { readonly interruptActiveTurn?: boolean },
   ) => {
     e?.preventDefault();
     // Typed out in full rather than picked from the menu. Attachments or contexts
@@ -7658,6 +7660,11 @@ export default function ChatView(props: ChatViewProps) {
       composerRef.current?.resetCursorState();
       return;
     }
+    // Reaching here with a turn running means the user steered rather than
+    // queued. The queue's own drain and annotation drops are not corrections.
+    const interruptForSteer =
+      sendOptions?.interruptActiveTurn === true ||
+      (queuedMessage === undefined && directAnnotation === undefined && phase === "running");
     const threadIdForSend = activeThread.id;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
@@ -8414,6 +8421,7 @@ export default function ChatView(props: ChatViewProps) {
           runtimeMode,
           interactionMode: sendInteractionMode,
           ...(bootstrap ? { bootstrap } : {}),
+          ...(interruptForSteer ? { interruptActiveTurn: true } : {}),
           createdAt: messageCreatedAt,
         },
       });
@@ -8651,7 +8659,9 @@ export default function ChatView(props: ChatViewProps) {
     steer: (id) => {
       const message = queuedMessages.find((entry) => entry.id === id);
       if (!message || sendInFlightRef.current || queueBlockedByPendingRequest) return;
-      void onSend(undefined, message.submissionIntent, undefined, message);
+      void onSend(undefined, message.submissionIntent, undefined, message, {
+        interruptActiveTurn: true,
+      });
     },
     remove: (id) => {
       if (!activeThreadKey) return;

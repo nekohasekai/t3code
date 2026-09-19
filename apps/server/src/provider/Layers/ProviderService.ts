@@ -42,6 +42,7 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -1719,6 +1720,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // rather than issuing a new one: sessions that go a long time between
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
+      // For adapters that do not implement it inside sendTurn. Best-effort:
+      // a refused interrupt still delivers on the provider's own boundary.
+      if (
+        input.interruptActiveTurn === true &&
+        !routed.adapter.capabilities.nativeInterruptAndSend
+      ) {
+        yield* routed.adapter.interruptTurn(input.threadId).pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.interrupt;
+            }
+            return Effect.logInfo("provider.turn.interrupt-before-send-failed", {
+              threadId: input.threadId,
+              provider: routed.adapter.provider,
+              cause,
+            });
+          }),
+        );
+      }
       const analyticsModelSelection =
         input.modelSelection?.instanceId === routed.instanceId ? input.modelSelection : undefined;
       const turn = yield* Effect.acquireUseRelease(

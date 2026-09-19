@@ -52,6 +52,10 @@ export interface ProviderAdapterCapabilities {
   readonly promptlessTurnContinuation?: boolean;
   /** False when native conversation history cannot be rewound. */
   readonly supportsConversationRollback?: boolean;
+  /** True when `sendTurn` handles `interruptActiveTurn` itself. Unset adapters
+      get ProviderService's interrupt-then-send, which is only safe where
+      `interruptTurn` keeps the session alive. */
+  readonly nativeInterruptAndSend?: boolean;
 }
 
 export interface ProviderThreadTurnSnapshot {

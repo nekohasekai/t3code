@@ -225,6 +225,9 @@ const remapClaudeForkTurnBoundaries = (
 };
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
+
+/** Past this, the steer falls back to the fold rather than hanging the send. */
+const CLAUDE_STEER_INTERRUPT_TIMEOUT = "15 seconds";
 type ClaudeTextStreamKind = Extract<
   RuntimeContentStreamKind,
   "assistant_text" | "reasoning_text" | "reasoning_summary_text"
@@ -445,6 +448,8 @@ interface ClaudeSessionContext {
   readonly workflowMemberFingerprints: Map<string, string>;
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
+  /** Waiters on "the active turn reached a terminal state", released by `completeTurn`. */
+  readonly turnSettlers: Set<Deferred.Deferred<void>>;
   turnState: ClaudeTurnState | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
@@ -457,6 +462,7 @@ interface ClaudeSessionContext {
 }
 
 interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
+  readonly interrupt?: () => Promise<unknown>;
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
@@ -2657,6 +2663,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
   });
 
+  const releaseTurnSettlers = Effect.fn("releaseTurnSettlers")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    if (context.turnSettlers.size === 0) return;
+    const settlers = Array.from(context.turnSettlers);
+    context.turnSettlers.clear();
+    for (const settler of settlers) {
+      yield* Deferred.succeed(settler, undefined);
+    }
+  });
+
   const completeTurn = Effect.fn("completeTurn")(function* (
     context: ClaudeSessionContext,
     status: ProviderRuntimeTurnStatus,
@@ -2763,6 +2780,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         hasUsage: result?.usage !== undefined,
         ...(errorMessage ? { errorMessage } : {}),
       });
+      yield* releaseTurnSettlers(context);
       return;
     }
 
@@ -2850,6 +2868,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ...(status === "failed" && errorMessage ? { lastError: errorMessage } : {}),
     };
     yield* updateResumeCursor(context);
+    yield* releaseTurnSettlers(context);
   });
 
   const handleStreamEvent = Effect.fn("handleStreamEvent")(function* (
@@ -4366,6 +4385,37 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (sessions.get(context.session.threadId) === context) {
       sessions.delete(context.session.threadId);
     }
+    yield* releaseTurnSettlers(context);
+  });
+
+  const softInterruptActiveTurn = Effect.fn("softInterruptActiveTurn")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const interrupt = context.query.interrupt;
+    if (!interrupt) return;
+    const settler = yield* Deferred.make<void>();
+    context.turnSettlers.add(settler);
+    // Register first, re-read second: `completeTurn` runs on the stream fiber
+    // and could otherwise park this waiter past its own edge.
+    if (!context.turnState) {
+      context.turnSettlers.delete(settler);
+      return;
+    }
+    // Acknowledgement is not settlement: the control response lands while the
+    // turn is still unwinding its tools.
+    yield* Effect.gen(function* () {
+      const acknowledged = yield* Effect.promise(() =>
+        // Invoke through the query object: SDK methods rely on `this`.
+        interrupt.call(context.query).then(
+          () => true,
+          () => false,
+        ),
+      );
+      if (acknowledged) yield* Deferred.await(settler);
+    }).pipe(
+      Effect.timeoutOption(CLAUDE_STEER_INTERRUPT_TIMEOUT),
+      Effect.ensuring(Effect.sync(() => context.turnSettlers.delete(settler))),
+    );
   });
 
   const requireSession = (
@@ -5050,6 +5100,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         pendingTaskModels,
         workflowMemberFingerprints,
         liveTaskIds,
+        turnSettlers: new Set(),
         turnState: undefined,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
@@ -5148,6 +5199,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       : undefined;
     if (modelSelection) {
       context.startInput = { ...context.startInput, modelSelection };
+    }
+
+    // A fold only lands between tool rounds, so a correction must abort the
+    // turn instead. A refused interrupt degrades to the steer below.
+    if (
+      input.interruptActiveTurn === true &&
+      context.turnState !== undefined &&
+      context.turnState.synthetic !== true
+    ) {
+      yield* softInterruptActiveTurn(context);
     }
 
     // A sendTurn while a real turn is running is a steer: the message is
@@ -5569,6 +5630,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      nativeInterruptAndSend: true,
     },
     compaction: { type: "slash-command", command: "/compact" },
     startSession,
