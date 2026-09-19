@@ -17,6 +17,7 @@ const licenseGeneratorSource = path.join(
 );
 const escapedWorkspaceRoot = workspaceRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const mobileShikiRoot = path.dirname(require.resolve("shiki/package.json", { paths: [__dirname] }));
+const defaultResolveRequest = config.resolver?.resolveRequest;
 const resolveShikiDependencyRoot = (packageName) => {
   const entryPath = require.resolve(packageName, { paths: [mobileShikiRoot] });
   let currentDir = path.dirname(entryPath);
@@ -35,6 +36,19 @@ const resolveShikiDependencyRoot = (packageName) => {
 config.watchFolders = [...new Set([...(config.watchFolders ?? []), workspaceRoot])];
 config.resolver = {
   ...config.resolver,
+  resolveRequest(context, moduleName, platform) {
+    // DOM components and Expo's web overlays must share the mobile app's React instance.
+    if (platform === "web" && /^(react|react-dom)(\/.*)?$/.test(moduleName)) {
+      return context.resolveRequest(
+        { ...context, originModulePath: path.join(__dirname, "package.json") },
+        moduleName,
+        platform,
+      );
+    }
+    return defaultResolveRequest
+      ? defaultResolveRequest(context, moduleName, platform)
+      : context.resolveRequest(context, moduleName, platform);
+  },
   blockList: [
     ...(Array.isArray(config.resolver?.blockList)
       ? config.resolver.blockList
