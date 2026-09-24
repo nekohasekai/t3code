@@ -9,7 +9,6 @@ import {
   CommonActions,
   NavigationContext,
   NavigationRouteContext,
-  StackActions,
   useNavigation,
 } from "@react-navigation/native";
 import {
@@ -41,8 +40,8 @@ import {
   type WorkspacePaneLayout,
 } from "../../lib/layout";
 import {
-  resolveThreadSelectionNavigationAction,
-  resolveThreadSelectionOverlayState,
+  resolveCompactThreadSelectionOverlayState,
+  resolveSplitThreadSelectionState,
 } from "../../lib/adaptive-navigation";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { mobilePreferencesAtom } from "../../state/preferences";
@@ -500,14 +499,16 @@ function AdaptiveWorkspaceLayoutContent(
         environmentId: String(thread.environmentId),
         threadId: String(thread.id),
       };
-      const navigationAction = resolveThreadSelectionNavigationAction({
-        usesSplitView: layout.usesSplitView,
-        pathname,
-      });
-      const overlayState = resolveThreadSelectionOverlayState({
+      if (layout.usesSplitView) {
+        setFileInspectorPreferredVisible(false);
+        navigation.dispatch((state) =>
+          CommonActions.reset(resolveSplitThreadSelectionState(state, params)),
+        );
+        return;
+      }
+      const overlayState = resolveCompactThreadSelectionOverlayState({
         state: navigation.getState(),
         workspaceRouteKey: props.workspaceRouteKey,
-        action: navigationAction,
         params,
       });
       if (overlayState !== null) {
@@ -515,23 +516,9 @@ function AdaptiveWorkspaceLayoutContent(
         navigation.dispatch(CommonActions.reset(overlayState));
         return;
       }
-      if (navigationAction === "set-params") {
-        const nextThreadKey = scopedThreadKey(thread.environmentId, thread.id);
-        if (nextThreadKey === selectedThreadKey) {
-          return;
-        }
-        setFileInspectorPreferredVisible(false);
-        navigation.navigate("Thread", params);
-        return;
-      }
-      if (navigationAction === "replace") {
-        setFileInspectorPreferredVisible(false);
-        navigation.dispatch(StackActions.replace("Thread", params));
-        return;
-      }
       navigation.navigate("Thread", params);
     },
-    [layout.usesSplitView, pathname, navigation, selectedThreadKey, props.workspaceRouteKey],
+    [layout.usesSplitView, navigation, props.workspaceRouteKey],
   );
 
   const contextValue = useMemo(
