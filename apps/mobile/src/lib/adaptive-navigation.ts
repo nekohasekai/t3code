@@ -21,13 +21,12 @@ export function resolveSplitThreadSelectionState(state: NavigationState, params:
   };
 }
 
-/** Dismiss sheets and push the thread above their underlying workspace destination in one stack update. */
+/** Dismiss sheets and select their underlying workspace destination in one stack update. */
 export function resolveCompactThreadSelectionOverlayState(input: {
-  readonly state: NavigationState | undefined;
+  readonly state: NavigationState;
   readonly workspaceRouteKey: string | undefined;
   readonly params: ThreadParams;
 }) {
-  if (input.state === undefined) return null;
   const workspaceIndex = input.state.routes.findIndex(
     (route) => route.key === input.workspaceRouteKey,
   );

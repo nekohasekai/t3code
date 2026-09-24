@@ -9,6 +9,8 @@ import {
   CommonActions,
   NavigationContext,
   NavigationRouteContext,
+  type NavigationHelpers,
+  type ParamListBase,
   useNavigation,
 } from "@react-navigation/native";
 import {
@@ -204,6 +206,7 @@ export function AdaptiveWorkspaceLayout(props: {
   readonly children: ReactNode;
   readonly pathname: string;
   readonly workspaceRouteKey: string | undefined;
+  readonly rootNavigation: NavigationHelpers<ParamListBase>;
 }) {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   if (!AsyncResult.isSuccess(preferencesResult)) {
@@ -228,6 +231,7 @@ function AdaptiveWorkspaceLayoutContent(
     readonly children: ReactNode;
     readonly pathname: string;
     readonly workspaceRouteKey: string | undefined;
+    readonly rootNavigation: NavigationHelpers<ParamListBase>;
   } & {
     readonly projectGroupingMode: SidebarProjectGroupingMode;
   },
@@ -499,26 +503,22 @@ function AdaptiveWorkspaceLayoutContent(
         environmentId: String(thread.environmentId),
         threadId: String(thread.id),
       };
-      if (layout.usesSplitView) {
-        setFileInspectorPreferredVisible(false);
-        navigation.dispatch((state) =>
-          CommonActions.reset(resolveSplitThreadSelectionState(state, params)),
-        );
-        return;
-      }
-      const overlayState = resolveCompactThreadSelectionOverlayState({
-        state: navigation.getState(),
-        workspaceRouteKey: props.workspaceRouteKey,
-        params,
+      setFileInspectorPreferredVisible(false);
+      props.rootNavigation.dispatch((state) => {
+        if (layout.usesSplitView) {
+          return CommonActions.reset(resolveSplitThreadSelectionState(state, params));
+        }
+        const overlayState = resolveCompactThreadSelectionOverlayState({
+          state,
+          workspaceRouteKey: props.workspaceRouteKey,
+          params,
+        });
+        return overlayState === null
+          ? CommonActions.navigate("Thread", params)
+          : CommonActions.reset(overlayState);
       });
-      if (overlayState !== null) {
-        setFileInspectorPreferredVisible(false);
-        navigation.dispatch(CommonActions.reset(overlayState));
-        return;
-      }
-      navigation.navigate("Thread", params);
     },
-    [layout.usesSplitView, navigation, props.workspaceRouteKey],
+    [layout.usesSplitView, props.rootNavigation, props.workspaceRouteKey],
   );
 
   const contextValue = useMemo(
