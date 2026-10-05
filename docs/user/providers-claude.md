@@ -53,6 +53,13 @@ You can also send `/compact` in an existing conversation. Web and desktop offer
 a large older thread. See [commands and skills](./composer.md#commands-and-skills)
 for using composer commands.
 
+## Steer a running turn
+
+A [steer](./composer.md#send-while-the-agent-is-working) stops the command or tool
+Claude is running so Claude reads your message right away, as pressing Esc and then
+sending does in Claude Code. Background commands and subagents keep running. Queue
+the message instead if the current command should finish first.
+
 ## Usage limits
 
 If your Claude subscription runs out of usage mid-turn, the thread shows which
