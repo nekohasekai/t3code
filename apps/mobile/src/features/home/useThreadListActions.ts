@@ -244,7 +244,7 @@ export function useThreadListActions(): {
   readonly settleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly snoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => Promise<boolean>;
   readonly unsnoozeThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
-  readonly dismissThreadWoke: (thread: EnvironmentThreadShell) => void;
+  readonly dismissThreadWoke: (thread: EnvironmentThreadShell) => Promise<void>;
   readonly unsettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly pinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unpinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
@@ -284,14 +284,23 @@ export function useThreadListActions(): {
   // Same acknowledgement as the web Woke label: a visit stamped at the wake
   // time. The server keeps the later watermark, so every device clears it.
   const dismissThreadWoke = useCallback(
-    (thread: EnvironmentThreadShell) => {
+    async (thread: EnvironmentThreadShell) => {
       const wokeAt = threadWokeAt(thread, { now: new Date().toISOString() });
       if (wokeAt === null) return;
       selectionHaptic();
-      void visitMutation({
+      const result = await visitMutation({
         environmentId: thread.environmentId,
         input: { threadId: thread.id, visitedAt: wokeAt },
       });
+      if (result._tag === "Failure") {
+        const error = Cause.squash(result.cause);
+        Alert.alert(
+          "Could not dismiss Woke",
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : "The Woke marker could not be dismissed.",
+        );
+      }
     },
     [visitMutation],
   );
