@@ -768,8 +768,9 @@ it.effect.each([true, false])(
           yield* worker.drain();
           assert.deepEqual(steered, ["unread steer"]);
 
-          // The provider still holds the steer when Stop ends its turn.
-          unreadSteers.push(messageId);
+          // The provider still holds the steer when Stop ends its turn. A
+          // steer offered twice is listed twice and still returns once.
+          unreadSteers.push(messageId, messageId);
           const interrupted = yield* orchestrator.streamDomainEvents.pipe(
             Stream.filter(
               (event) =>
@@ -794,8 +795,9 @@ it.effect.each([true, false])(
 
           const stopped = yield* orchestrator.getThreadProjection(threadId);
           const message = stopped.messages.find((candidate) => candidate.id === messageId);
-          const requeued = stopped.runs.find((run) => run.userMessageId === messageId);
-          assert.isDefined(requeued);
+          const requeuedRuns = stopped.runs.filter((run) => run.userMessageId === messageId);
+          assert.lengthOf(requeuedRuns, 1);
+          const requeued = requeuedRuns[0];
           assert.equal(message?.runId, requeued?.id);
           assert.deepEqual(
             stopped.turnItems.flatMap((item) =>

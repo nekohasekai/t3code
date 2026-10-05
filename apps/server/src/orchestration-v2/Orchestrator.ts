@@ -8070,7 +8070,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : command.holdQueue;
       let ordinal = nextRunOrdinal(projection);
       let queuePosition = Math.max(0, ...queuedRuns.map((run) => run.queuePosition ?? run.ordinal));
-      for (const messageId of command.messageIds) {
+      // A steer offered twice into one turn can be listed twice.
+      for (const messageId of new Set(command.messageIds)) {
         const message = projection.messages.find((candidate) => candidate.id === messageId);
         const source = projection.runs.find((run) => run.id === message?.runId);
         const providerThreadId = source?.providerThreadId ?? null;
