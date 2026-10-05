@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Socket from "effect/unstable/socket/Socket";
@@ -10,6 +11,7 @@ import { resolveCloudPublicConfig } from "../features/cloud/publicConfig";
 import { tracingLayer } from "../features/observability/tracing";
 import * as Persistence from "../persistence/layer";
 import { disposeOnFoundationReplace, type FoundationHotModule } from "./foundation-fast-refresh";
+import { whenProtectedDataAvailable } from "./protectedData";
 
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
 
@@ -35,6 +37,9 @@ const runtimeLayer = Layer.merge(
   Layer.provideMerge(httpClientLayer),
   Layer.provideMerge(tracingLayer.pipe(Layer.provide(httpClientLayer))),
   Layer.provideMerge(Persistence.layer),
+  // These layers read the keychain and the database while they build, and a
+  // failed build is kept for the life of the process.
+  Layer.provide(Layer.effectDiscard(Effect.promise(whenProtectedDataAvailable))),
 );
 
 export const runtime: ManagedRuntime.ManagedRuntime<
