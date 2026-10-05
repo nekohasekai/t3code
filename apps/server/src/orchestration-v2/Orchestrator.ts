@@ -9901,7 +9901,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       );
-      if (command.type === "queue.resume") {
+      if (command.type === "queue.resume" || command.type === "thread.unread-steers.requeue") {
         yield* mapDispatchError(command)(startNextQueuedRun(command.threadId));
       }
       return {
